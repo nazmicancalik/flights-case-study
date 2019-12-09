@@ -3,8 +3,9 @@ title: "R Notebook"
 output:
   html_document: default
   pdf_document: default
+  fig_width: 12
 ---
-Imports 
+###### Imports 
 ```{r}
 library(ggplot2)
 library(tidyverse)
@@ -12,7 +13,7 @@ library(magrittr)
 library(data.table)
 ```
 
-Loading the data
+###### Loading the data
 ```{r}
 airlines_data <- read.csv("data/airlines.csv")
 airports_data <- read.csv("data/airports.csv")
@@ -21,73 +22,121 @@ flights_lax_data <- read.csv("data/flightsLAX.csv")
 
 
 
-Merge two data tables to include airline names
+###### Merge two data tables to include airline names
 ```{r}
 flights <- merge(x=flights_lax_data, y=airlines_data, by.x="AIRLINE", by.y = "IATA_CODE")
+flights <- merge(x=flights,y=airports_data, by.x = 'ORIGIN_AIRPORT', by.y = 'IATA_CODE')
+
 flights <- flights %>% 
   rename(
     AIRLINE_CODE = AIRLINE,
-    AIRLINE = AIRLINE.y
+    AIRLINE = AIRLINE.y,
+    ORIGIN_AIRPORT_NAME = AIRPORT
   )
+
+# Merge with airports data to get the destination airport name.
+flights <- merge(x=flights,y=airports_data, by.x = 'DESTINATION_AIRPORT', by.y = 'IATA_CODE')
+
+
+# Rename the destination airport name.
+flights <- flights %>% 
+  rename(
+    DESTINATION_AIRPORT_NAME = AIRPORT
+  )
+
 flights <- as.data.table(flights)
+
+# Rename airport and airline to include their abbreviation
+flights <- flights[,AIRLINE:=paste(AIRLINE_CODE,AIRLINE,sep = ' - ')]
+flights <- flights[,ORIGIN_AIRPORT_NAME:=paste(ORIGIN_AIRPORT,ORIGIN_AIRPORT_NAME,sep = ' - ')]
+flights <- flights[,DESTINATION_AIRPORT_NAME:=paste(DESTINATION_AIRPORT,DESTINATION_AIRPORT_NAME,sep = ' - ')]
 ```
 
-Get the flights which have a departure delay and arrival delay
+###### Get the flights which have a departure delay and arrival delay
 ```{r}
 departure_delayed_flights <- flights[DEPARTURE_DELAY > 0]
 arrival_delayed_flights <- flights[ARRIVAL_DELAY > 0]
 ```
 
-Top 10 Departure Delay in specific day
-```{r}
+###### Top 10 Departure Delay in specific day
+```{r fig.fullwidth=TRUE}
 total_departure_delay_by_day <-  departure_delayed_flights %>% 
   group_by(MONTH,DAY) %>% 
     summarise(sum_departure_delay = sum(DEPARTURE_DELAY, na.rm=TRUE))
+
 # Order the days & get first 10 days
 setorder(total_departure_delay_by_day, sum_departure_delay)
-first_ten = head(total_departure_delay_by_day,10)
 
-first_ten %>% 
-      ggplot(aes(x = paste(DAY,MONTH,sep = '.'), y = sum_departure_delay)) +
-      geom_bar(stat = "identity") +
-      theme_classic() +
-      labs(
-        x = "Day",
-        y = "Total Departure Delay",
-        title = paste(
-          "Total 10 Departure Delay by Day"
-        )
-      )
+# Pick top first 15 days.
+o = head(total_departure_delay_by_day,15)
+
+# Plot the ordered graph in decreasing order 
+o %>% 
+  ggplot(aes(x = reorder(paste(DAY,MONTH,sep = '/'),-sum_departure_delay), y = sum_departure_delay)) +
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  labs(
+    x = "Day",
+    y = "Total Departure Delay",
+    title = paste(
+      "Top 15 Total Departure Delay by Day (Whole Country)"
+    )
+  )
 ```
+     
+> As we can see 31st of December has the most departure delays maybe due to New Years Eve. 
 
-Top 10 Arrival Delay in specific day
+###### Top 10 Arrival Delay in specific day
 ```{r}
 total_arrival_delay_by_day <-  arrival_delayed_flights %>% 
   group_by(MONTH,DAY) %>% 
     summarise(sum_arrival_delay = sum(ARRIVAL_DELAY, na.rm=TRUE))
 # Order the days & get first 10 days
 setorder(total_arrival_delay_by_day, sum_arrival_delay)
-first_ten = head(total_arrival_delay_by_day,10)
 
-first_ten %>% 
-      ggplot(aes(x = paste(DAY,MONTH,sep = '/'), y = sum_arrival_delay)) +
-      geom_bar(stat = "identity") +
-      theme_classic() +
-      labs(
-        x = "Day",
-        y = "Total Arrival Delay",
-        title = paste(
-          "Top 10 Total Arrival Delay by Day"
-        )
-      )
+# Pick the first 15 case.
+o = head(total_arrival_delay_by_day, 15)
+
+o %>% 
+  ggplot(aes(x = reorder(paste(DAY,MONTH,sep = '/'),-sum_arrival_delay), y = sum_arrival_delay)) +
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  labs(
+    x = "Day",
+    y = "Total Arrival Delay",
+    title = paste(
+      "Top 15 Total Arrival Delay by Day (Whole Country)"
+    )
+  )
 ```
 
-Get the average delay by airline company
+###### Get the average departure delay by airline
+```{r}
+o <- departure_delayed_flights %>% 
+  group_by(AIRLINE_CODE,AIRLINE) %>% 
+    summarise(mean_departure_delay = mean(DEPARTURE_DELAY, na.rm=TRUE))
+
+o %>% 
+  ggplot(aes(x = reorder(AIRLINE_CODE, -mean_departure_delay), y = mean_departure_delay, fill = AIRLINE)) +
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  labs(
+    x = "Airline Company",
+    y = "Average departure delay",
+    title = paste(
+      "Average departure delay by airline"
+    )
+    )
+```
+     
+  > American Eagle Airlines has the most average departure delay. 
+
+###### Get the average arrival delay by airline company
 ```{r}
 arrival_delayed_flights %>% 
   group_by(AIRLINE, AIRLINE_CODE) %>% 
     summarise(mean_arrival_delay = mean(ARRIVAL_DELAY, na.rm=TRUE)) %>% 
-      ggplot(aes(x = AIRLINE_CODE, y = mean_arrival_delay, fill = paste(AIRLINE_CODE,AIRLINE, sep = ' - '))) +
+      ggplot(aes(x = reorder(AIRLINE_CODE, -mean_arrival_delay), y = mean_arrival_delay, fill = AIRLINE)) +
       geom_bar(stat = "identity") +
       theme_classic() +
       labs(
@@ -99,92 +148,100 @@ arrival_delayed_flights %>%
       )
 ```
 
+ > American Eagle Airlines has the most average arrival delay. 
 
+###### Departure Delay by Origin Airport
 ```{r}
+o <- departure_delayed_flights %>%
+  group_by(ORIGIN_AIRPORT, ORIGIN_AIRPORT_NAME) %>%
+    summarise(mean_departure_delay = sum(DEPARTURE_DELAY, na.rm=TRUE)) 
+setorder(o,-mean_departure_delay)
 
-departure_delayed_flights %>% 
-  group_by(AIRLINE_CODE,AIRLINE) %>% 
-    summarise(mean_departure_delay = mean(DEPARTURE_DELAY, na.rm=TRUE)) %>% 
-      ggplot(aes(x = AIRLINE_CODE, y = mean_departure_delay, fill = paste(AIRLINE_CODE,AIRLINE, sep = ' - '))) +
-      geom_bar(stat = "identity") +
-      theme_classic() +
-      labs(
-        x = "Airline Company",
-        y = "Average departure delay",
-        title = paste(
-          "Average departure delay by companies"
-        )
+# Pick the top entries
+o <- head(o,10)
+
+o %>%
+  ggplot(aes(x = reorder(ORIGIN_AIRPORT, -mean_departure_delay), y = mean_departure_delay, fill = ORIGIN_AIRPORT_NAME)) +
+    geom_histogram(stat = "identity") +
+    theme_classic() +
+    labs(
+      x = "Airport",
+      y = "Total departure delay",
+      title = paste(
+        "Top 10 departure total delays by airports"
       )
+    )
+```
+
+###### Average departure delays per flight for each airport
+```{r}
+o <- departure_delayed_flights %>%
+  group_by(ORIGIN_AIRPORT, ORIGIN_AIRPORT_NAME) %>%
+    summarise(mean_departure_delay = mean(DEPARTURE_DELAY, na.rm=TRUE)) 
+setorder(o,-mean_departure_delay)
+o <- head(o,10)
+
+o %>%
+  ggplot(aes(x = reorder(ORIGIN_AIRPORT,-mean_departure_delay), y = mean_departure_delay, fill = ORIGIN_AIRPORT_NAME)) +
+    geom_histogram(stat = "identity") +
+    theme_classic() +
+    labs(
+      x = "Airport",
+      y = "Average departure delay",
+      title = paste(
+        "Average departure delay by airports, top 10"
+      )
+    )
+```
+    
+  > 
+    - As we see MTJ - Montrose Regional Airport has the most average departure delay
+    - Now we see that LAX is not even in the list because it is a good airport.  
+
+###### Arrival Delay by Destination Airport
+```{r}
+o <- arrival_delayed_flights %>%
+  group_by(DESTINATION_AIRPORT, DESTINATION_AIRPORT_NAME) %>%
+    summarise(mean_arrival_delay = sum(ARRIVAL_DELAY, na.rm=TRUE)) 
+setorder(o,-mean_arrival_delay)
+
+# Pick the top entries
+o <- head(o,10)
+
+o %>%
+  ggplot(aes(x = reorder(DESTINATION_AIRPORT, -mean_arrival_delay), y = mean_arrival_delay, fill = DESTINATION_AIRPORT_NAME)) +
+    geom_bar(stat = "identity") +
+    theme_classic() +
+    labs(
+      x = "Airport",
+      y = "Total arrival delay",
+      title = paste(
+        "Top 10 arrival total delays by airports"
+      )
+    )
 ```
 
 
-
-Departure Delay by Origin Airport
+###### Average arrival delays per flight for each airport.
 ```{r}
-departure_delay_by_airport <- departure_delayed_flights[,.(TOTAL_DEPARTURE_DELAY =sum(DEPARTURE_DELAY)),by=ORIGIN_AIRPORT]
+o <- arrival_delayed_flights %>%
+  group_by(DESTINATION_AIRPORT, DESTINATION_AIRPORT_NAME) %>%
+    summarise(mean_arrival_delay = mean(ARRIVAL_DELAY, na.rm=TRUE)) 
+setorder(o,-mean_arrival_delay)
+o <- head(o,10)
 
-departure_delay_by_airport %>%
-  ggplot(aes(x = ORIGIN_AIRPORT, y = TOTAL_DEPARTURE_DELAY, fill = ORIGIN_AIRPORT)) +
-      geom_bar(stat = "identity") +
-      theme_classic() +
-      labs(
-        x = "Airport",
-        y = "Total Departure Delay",
-        title = paste(
-          "Departure Delay by Origin Airport"
-        )
+o %>%
+  ggplot(aes(x = reorder(DESTINATION_AIRPORT,-mean_arrival_delay), y = mean_arrival_delay, fill = DESTINATION_AIRPORT_NAME)) +
+    geom_histogram(stat = "identity") +
+    theme_classic() +
+    labs(
+      x = "Airport",
+      y = "Average arrival delay",
+      title = paste(
+        "Average arrival delay by airports, top 10"
       )
+    )
 ```
-
-Average departure delays per flight for each airport
-```{r}
-departure_delayed_flights %>% 
-  group_by(ORIGIN_AIRPORT) %>% 
-    summarise(mean_departure_delay = mean(DEPARTURE_DELAY, na.rm=TRUE)) %>% 
-      ggplot(aes(x = ORIGIN_AIRPORT, y = mean_departure_delay, fill = ORIGIN_AIRPORT)) +
-      geom_bar(stat = "identity") +
-      theme_classic() +
-      labs(
-        x = "Airport",
-        y = "Average departure delay",
-        title = paste(
-          "Average departure delay by airports"
-        )
-      )
-```
-
-Arrival Delay by Destination Airport
-```{r}
-arrival_delay_by_airport <- arrival_delayed_flights[,.(TOTAL_ARRIVAL_DELAY =sum(ARRIVAL_DELAY)),by=DESTINATION_AIRPORT]
-
-arrival_delay_by_airport %>%
-  ggplot(aes(x = DESTINATION_AIRPORT, y = TOTAL_ARRIVAL_DELAY, fill = DESTINATION_AIRPORT)) +
-      geom_bar(stat = "identity") +
-      theme_classic() +
-      labs(
-        x = "Airport",
-        y = "Total Arrival Delay",
-        title = paste(
-          "Arrival Delay by Destination Airport"
-        )
-      )
-```
-
-Average arrival delays per flight for each airport.
-```{r}
-arrival_delayed_flights %>% 
-  group_by(DESTINATION_AIRPORT) %>% 
-    summarise(mean_arrival_delay = mean(ARRIVAL_DELAY, na.rm=TRUE)) %>% 
-      ggplot(aes(x = DESTINATION_AIRPORT, y = mean_arrival_delay, fill = DESTINATION_AIRPORT)) +
-      geom_bar(stat = "identity") +
-      theme_classic() +
-      labs(
-        x = "Airport",
-        y = "Average Arrival delay",
-        title = paste(
-          "Average arrival delay by airports"
-        )
-      )
-```
-
+   
+   > Cleveland Hopkins International Airport has the most average arrival delay.
 
